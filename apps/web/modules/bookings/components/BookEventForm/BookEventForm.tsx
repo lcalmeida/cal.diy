@@ -1,9 +1,11 @@
 import { getPaymentAppData } from "@calcom/app-store/_utils/payments/getPaymentAppData";
 import { useIsPlatformBookerEmbed } from "@calcom/atoms/hooks/useIsPlatformBookerEmbed";
+import dayjs from "@calcom/dayjs";
 import { useBookerStoreContext } from "@calcom/features/bookings/Booker/BookerStoreProvider";
 import { useBookerTime } from "@calcom/features/bookings/Booker/hooks/useBookerTime";
 import type { UseBookingFormReturnType } from "@calcom/features/bookings/Booker/hooks/useBookingForm";
 import { formatEventFromTime } from "@calcom/features/bookings/Booker/utils/dates";
+import { isOutsideBusinessHours } from "@calcom/features/bookings/lib/isOutsideBusinessHours";
 import type { BookerEvent } from "@calcom/features/bookings/types";
 import ServerTrans from "@calcom/lib/components/ServerTrans";
 import { APP_NAME, WEBSITE_PRIVACY_POLICY_URL, WEBSITE_TERMS_URL } from "@calcom/lib/constants";
@@ -108,6 +110,7 @@ export const BookEventForm = ({
   }
 
   const watchedCfToken = bookingForm.watch("cfToken");
+  const isOutsideOfBusinessHours = isOutsideBusinessHours(dayjs.utc(timeslot).tz(timezone));
 
   return (
     <div className="flex flex-col h-full">
@@ -173,6 +176,17 @@ export const BookEventForm = ({
             />
           </div>
         ) : null}
+
+        {isOutsideOfBusinessHours && (
+          <div data-testid="outside-business-hours-warning">
+            <Alert
+              className="my-2"
+              severity="warning"
+              title={t("outside_business_hours_title")}
+              message={t("outside_business_hours_description")}
+            />
+          </div>
+        )}
 
         {!isPlatform && (
           <div className="my-3 w-full text-xs text-subtle">
