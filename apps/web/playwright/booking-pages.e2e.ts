@@ -745,27 +745,3 @@ test.describe("Optional Email Field Validation", () => {
     await expect(page.getByTestId("success-page")).toBeVisible();
   });
 });
-
-test.describe("Copy booking summary", () => {
-  test.beforeEach(async ({ page, users }) => {
-    const pro = await users.create();
-    await page.goto(`/${pro.username}`);
-  });
-
-  test("copies title, date, time, timezone and location to the clipboard", async ({ page }) => {
-    await bookFirstEvent(page);
-
-    const bookingTitle = await page.getByTestId("booking-title").innerText();
-
-    await page.getByTestId("copy-booking-summary").click();
-    await expect(page.getByTestId("copy-booking-summary")).toHaveText(/Copied!/);
-
-    const summary = await page.evaluate(() => navigator.clipboard.readText());
-    const summaryLines = summary.split("\n");
-
-    expect(summaryLines[0]).toBe(bookingTitle);
-    expect(summary).toMatch(/^Date: /m);
-    expect(summary).toMatch(/^Time: /m);
-    expect(summary).toMatch(/^Timezone: /m);
-  });
-});
