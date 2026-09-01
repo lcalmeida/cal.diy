@@ -7,11 +7,13 @@ import type { IOutOfOfficeData } from "@calcom/features/availability/lib/getUser
 import { useBookerStoreContext } from "@calcom/features/bookings/Booker/BookerStoreProvider";
 import { useBookerTime } from "@calcom/features/bookings/Booker/hooks/useBookerTime";
 import { getQueryParam } from "@calcom/features/bookings/Booker/utils/query-param";
+import { isOutsideBusinessHours } from "@calcom/features/bookings/lib/isOutsideBusinessHours";
 import { useCheckOverlapWithOverlay } from "@calcom/features/bookings/lib/useCheckOverlapWithOverlay";
 import type { BookerEvent, Slots } from "@calcom/features/bookings/types";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { localStorage } from "@calcom/lib/webstorage";
 import classNames from "@calcom/ui/classNames";
+import { Badge } from "@calcom/ui/components/badge";
 import { Button } from "@calcom/ui/components/button";
 import { SkeletonText } from "@calcom/ui/components/skeleton";
 import { CalendarX2Icon } from "@coss/ui/icons";
@@ -59,7 +61,10 @@ type SlotItemProps = {
   onTentativeTimeSelect?: TOnTentativeTimeSelect;
   showAvailableSeatsCount?: boolean | null;
   event: {
-    data?: Pick<BookerEvent, "length" | "bookingFields" | "price" | "currency" | "metadata"> | null;
+    data?: Pick<
+      BookerEvent,
+      "length" | "bookingFields" | "price" | "currency" | "metadata" | "schedule"
+    > | null;
   };
   customClassNames?: string;
   confirmStepClassNames?: {
@@ -114,6 +119,11 @@ const SlotItem = ({
   const layout = useBookerStoreContext((state) => state.layout);
   const hasTimeSlots = !!seatsPerTimeSlot;
   const computedDateWithUsersTimezone = dayjs.utc(slot.time).tz(timezone);
+  // Business hours are a host-side concept, so they're evaluated in the host/organizer's
+  // own schedule timezone, not the viewer's — falling back to the viewer's timezone only
+  // if the event has no schedule timezone available.
+  const businessHoursTimezone = eventData?.schedule?.timeZone ?? timezone;
+  const isOutsideOfBusinessHours = isOutsideBusinessHours(dayjs.utc(slot.time).tz(businessHoursTimezone));
 
   const bookingFull = !!(hasTimeSlots && slot.attendees && slot.attendees >= seatsPerTimeSlot);
   const isHalfFull = slot.attendees && seatsPerTimeSlot && slot.attendees / seatsPerTimeSlot >= 0.5;
@@ -182,6 +192,11 @@ const SlotItem = ({
             )}
             {computedDateWithUsersTimezone.format(timeFormat)}
           </div>
+          {!bookingFull && isOutsideOfBusinessHours && (
+            <Badge variant="orange" size="sm" startIcon="triangle-alert" className="mt-1">
+              {t("outside_business_hours_short")}
+            </Badge>
+          )}
           {bookingFull && <p className="text-sm">{t("booking_full")}</p>}
           {hasTimeSlots && !bookingFull && (
             <p className="flex items-center text-sm">
