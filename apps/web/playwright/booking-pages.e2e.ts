@@ -745,3 +745,28 @@ test.describe("Optional Email Field Validation", () => {
     await expect(page.getByTestId("success-page")).toBeVisible();
   });
 });
+
+test.describe("Pick a time for me (random slot picker)", () => {
+  test.beforeEach(async ({ page, users }) => {
+    const pro = await users.create();
+    await page.goto(`/${pro.username}`);
+    await page.click('[data-testid="event-type-link"]');
+  });
+
+  test("picks a slot and lands on the confirm step without booking automatically", async ({ page }) => {
+    await page.getByTestId("pick-random-slot").click();
+
+    // Landed on the confirm form for a specific slot, not booked yet.
+    await expect(page).toHaveURL(/[?&]slot=.+/);
+    await expect(page.locator('[data-testid="confirm-book-button"]')).toBeVisible();
+    await expect(page.getByTestId("success-page")).toBeHidden();
+  });
+
+  test("the picked slot can be confirmed like a manually picked one", async ({ page }) => {
+    await page.getByTestId("pick-random-slot").click();
+    await bookTimeSlot(page);
+
+    await page.waitForURL((url) => url.pathname.startsWith("/booking"));
+    await expect(page.getByTestId("success-page")).toBeVisible();
+  });
+});

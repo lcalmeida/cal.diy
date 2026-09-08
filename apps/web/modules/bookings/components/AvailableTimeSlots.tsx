@@ -1,24 +1,27 @@
-import { useCallback, useMemo, useRef } from "react";
-
 import dayjs from "@calcom/dayjs";
+import { useBookerStoreContext } from "@calcom/features/bookings/Booker/BookerStoreProvider";
+import { useBookerTime } from "@calcom/features/bookings/Booker/hooks/useBookerTime";
+import { getQueryParam } from "@calcom/features/bookings/Booker/utils/query-param";
+import { pickRandomAvailableSlot } from "@calcom/features/bookings/lib/pickRandomAvailableSlot";
+import type { BookerEvent } from "@calcom/features/bookings/types";
+import { PUBLIC_INVALIDATE_AVAILABLE_SLOTS_ON_BOOKING_FORM } from "@calcom/lib/constants";
+import { useLocale } from "@calcom/lib/hooks/useLocale";
+import { localStorage } from "@calcom/lib/webstorage";
+import { BookerLayouts } from "@calcom/prisma/zod-utils";
+import classNames from "@calcom/ui/classNames";
+import { Button } from "@calcom/ui/components/button";
+import { showToast } from "@calcom/ui/components/toast";
 import {
   AvailableTimes,
   AvailableTimesSkeleton,
 } from "@calcom/web/modules/bookings/components/AvailableTimes";
-import { useBookerStoreContext } from "@calcom/features/bookings/Booker/BookerStoreProvider";
-import type { IUseBookingLoadingStates } from "../hooks/useBookings";
-import type { BookerEvent } from "@calcom/features/bookings/types";
-import type { Slot } from "~/schedules/lib/types";
-import { useNonEmptyScheduleDays } from "@calcom/web/modules/schedules/hooks/useNonEmptyScheduleDays";
-import { useSlotsForAvailableDates } from "@calcom/web/modules/schedules/hooks/useSlotsForDate";
-import { PUBLIC_INVALIDATE_AVAILABLE_SLOTS_ON_BOOKING_FORM } from "@calcom/lib/constants";
-import { localStorage } from "@calcom/lib/webstorage";
-import { BookerLayouts } from "@calcom/prisma/zod-utils";
-import classNames from "@calcom/ui/classNames";
-
 import { AvailableTimesHeader } from "@calcom/web/modules/bookings/components/AvailableTimesHeader";
 import type { useScheduleForEventReturnType } from "@calcom/web/modules/schedules/hooks/useEvent";
-import { getQueryParam } from "@calcom/features/bookings/Booker/utils/query-param";
+import { useNonEmptyScheduleDays } from "@calcom/web/modules/schedules/hooks/useNonEmptyScheduleDays";
+import { useSlotsForAvailableDates } from "@calcom/web/modules/schedules/hooks/useSlotsForDate";
+import { useCallback, useMemo, useRef } from "react";
+import type { Slot, Slots } from "~/schedules/lib/types";
+import type { IUseBookingLoadingStates } from "../hooks/useBookings";
 
 type AvailableTimeSlotsProps = {
   extraDays?: number;
@@ -28,7 +31,10 @@ type AvailableTimeSlotsProps = {
   seatsPerTimeSlot?: number | null;
   showAvailableSeatsCount?: boolean | null;
   event: {
-    data?: Pick<BookerEvent, "length" | "bookingFields" | "price" | "currency" | "metadata"> | null;
+    data?: Pick<
+      BookerEvent,
+      "length" | "bookingFields" | "price" | "currency" | "metadata" | "schedule"
+    > | null;
   };
   customClassNames?: {
     availableTimeSlotsContainer?: string;
@@ -79,12 +85,16 @@ export const AvailableTimeSlots = ({
   confirmStepClassNames,
   onAvailableTimeSlotSelect,
   hideAvailableTimesHeader = false,
+  event,
   ...props
 }: AvailableTimeSlotsProps) => {
+  const { t } = useLocale();
   const selectedDate = useBookerStoreContext((state) => state.selectedDate);
+  const setSelectedDate = useBookerStoreContext((state) => state.setSelectedDate);
 
   const setSeatedEventData = useBookerStoreContext((state) => state.setSeatedEventData);
   const date = selectedDate || dayjs().format("YYYY-MM-DD");
+  const { timezone: viewerTimezone } = useBookerTime();
   const [layout] = useBookerStoreContext((state) => [state.layout]);
   const isColumnView = layout === BookerLayouts.COLUMN_VIEW;
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -189,8 +199,62 @@ export const AvailableTimeSlots = ({
     [overlayCalendarToggled, onTimeSelect, seatsPerTimeSlot, skipConfirmStep, toggleConfirmButton]
   );
 
+  // Business hours are a host-side concept (see isOutsideBusinessHours), so the
+  // preference below is evaluated in the host/organizer's own schedule timezone,
+  // not the viewer's — falling back to the viewer's timezone only if the event
+  // has no schedule timezone available.
+  const businessHoursTimezone = event?.data?.schedule?.timeZone ?? viewerTimezone;
+
+  const handleRandomPick = useCallback(() => {
+    const slotsByDate: Slots = scheduleData?.slots ?? {};
+    const pickedTime = pickRandomAvailableSlot({
+      slotsByDate,
+      now: dayjs(),
+      timeZone: businessHoursTimezone,
+      seatsPerTimeSlot,
+      unavailableTimeSlots,
+    });
+
+    if (!pickedTime) {
+      showToast(t("no_random_slot_available"), "error");
+      return;
+    }
+
+    const pickedDateKey = Object.keys(slotsByDate).find((dateKey) =>
+      slotsByDate[dateKey]?.some((slot: Slot) => slot.time === pickedTime)
+    );
+    const pickedSlot = pickedDateKey
+      ? slotsByDate[pickedDateKey]?.find((slot: Slot) => slot.time === pickedTime)
+      : undefined;
+
+    if (pickedDateKey) {
+      setSelectedDate({ date: pickedDateKey });
+    }
+    onTimeSelect(pickedTime, pickedSlot?.attendees || 0, seatsPerTimeSlot, pickedSlot?.bookingUid);
+  }, [
+    scheduleData,
+    businessHoursTimezone,
+    seatsPerTimeSlot,
+    unavailableTimeSlots,
+    setSelectedDate,
+    onTimeSelect,
+    t,
+  ]);
+
   return (
     <>
+      {!isLoading && !hideAvailableTimesHeader && (
+        <div className="mb-3 flex justify-end">
+          <Button
+            data-testid="pick-random-slot"
+            color="secondary"
+            size="sm"
+            StartIcon="shuffle"
+            onClick={handleRandomPick}>
+            {t("pick_a_time_for_me")}
+          </Button>
+        </div>
+      )}
       <div
         className={classNames(
           `flex`,
@@ -252,6 +316,7 @@ export const AvailableTimeSlots = ({
                 handleSlotClick={handleSlotClick}
                 confirmButtonDisabled={confirmButtonDisabled}
                 confirmStepClassNames={confirmStepClassNames}
+                event={event}
                 {...props}
               />
             </div>
