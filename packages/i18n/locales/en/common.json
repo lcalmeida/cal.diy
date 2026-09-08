@@ -136,6 +136,8 @@
   "outside_business_hours_short": "Outside business hours",
   "outside_business_hours_title": "Outside business hours",
   "outside_business_hours_description": "This time falls outside our regular business hours (Mon-Fri, 9:00 - 18:00).",
+  "pick_a_time_for_me": "Pick a time for me",
+  "no_random_slot_available": "Couldn't find an available time in the next few days. Try picking a time manually.",
   "bookings_v3_title": "Try the new bookings page",
   "bookings_v3_name": "Enhanced bookings",
   "bookings_v3_description": "A redesigned booking page including a calendar view.",
