@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Offline checks for css-only.sh's rules. Run: scripts/pr-policy/css-only.test.sh
-set -euo pipefail
+set -uo pipefail
 cd "$(dirname "$0")"
 
 base='{
@@ -16,7 +16,7 @@ base='{
 fails=0
 expect() { # expect <ok|cssOnly> <true|false> <description> <jq patch>
   local got
-  got=$(jq "$4" <<<"$base" | ./css-only.sh --stdin | jq -r ".$1")
+  got=$( (jq "$4" <<<"$base" | ./css-only.sh || true) | jq -r ".$1")
   if [[ $got == "$2" ]]; then echo "ok   $3"; else echo "FAIL $3 ($1=$got, want $2)"; fails=1; fi
 }
 
@@ -34,5 +34,9 @@ expect ok false "rejects when the required check is missing" '.statusCheckRollup
 expect ok false "rejects when the required check is still running" '.statusCheckRollup[0] = {"name":"required","status":"IN_PROGRESS","conclusion":""}'
 expect ok false "rejects when another check failed" '.statusCheckRollup += [{"context":"legacy/status","state":"ERROR"}]'
 expect ok false "rejects a truncated file list" '.changedFiles = 150'
+
+# Exit code contract used by enforce.sh: 0 approvable, 1 not approvable.
+./css-only.sh <<<"$base" >/dev/null && echo "ok   exits 0 when approvable" || { echo "FAIL exit code on approve"; fails=1; }
+jq '.isDraft = true' <<<"$base" | ./css-only.sh >/dev/null; [[ $? -eq 1 ]] && echo "ok   exits 1 when not approvable" || { echo "FAIL exit code on reject"; fails=1; }
 
 exit $fails

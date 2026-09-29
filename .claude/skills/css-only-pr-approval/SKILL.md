@@ -6,9 +6,15 @@ description: Collect evidence for and run the CSS-only PR auto-approval control.
 # CSS-only PR approval
 
 Runs the CSS-only auto-approval control for one PR and reports the evidence.
-The policy lives in `scripts/pr-policy/css-only.sh` (single source of truth);
-the approval itself is always performed by the
-`.github/workflows/css-only-auto-approve.yml` Action as `github-actions[bot]`.
+Three separate pieces in `scripts/pr-policy/`:
+
+- `collect-evidence.sh <pr>` — snapshots PR state (files, checks, head SHA) as
+  JSON. No judgment.
+- `css-only.sh [evidence.json]` — the policy. Validates evidence offline, prints
+  a verdict JSON, exits 0 (approvable) or 1 (not). No network.
+- `enforce.sh <pr>` — collect → validate → act (comment, approve, dismiss).
+  Only the `.github/workflows/css-only-auto-approve.yml` Action runs this, as
+  `github-actions[bot]`.
 
 ## Rules (enforced by the script, do not re-implement)
 
@@ -29,11 +35,14 @@ the approval itself is always performed by the
 
 1. **Find the PR.** Use the number the user gave, or
    `gh pr view --json number -q .number` for the current branch.
-2. **Collect evidence (dry run).**
+2. **Collect evidence**, then **validate it** as a separate step:
    ```bash
-   scripts/pr-policy/css-only.sh <pr>
+   scripts/pr-policy/collect-evidence.sh <pr> > /tmp/pr-<pr>-evidence.json
+   scripts/pr-policy/css-only.sh /tmp/pr-<pr>-evidence.json > /tmp/pr-<pr>-verdict.json
+   jq -r .report /tmp/pr-<pr>-verdict.json
    ```
-   Exit 0 = approvable, 1 = not. The output is the evidence table.
+   Exit 0 = approvable, 1 = not. Keep both files: they are the evidence and the
+   verdict the report is based on.
 3. **Inspect the CSS itself.** The policy checks *which* files changed, not
    *what* they do. Read `gh pr diff <pr>` and flag, in the report, any added
    line with `@import`, `url(` pointing to an external host, `expression(`,
@@ -55,7 +64,8 @@ the approval itself is always performed by the
    The approval counts only if `commit_id` equals the PR's current
    `headRefOid`.
 6. **Report** to the user: verdict, evaluated commit, the rule table from
-   step 2, any flags from step 3, and a link to the Action run and PR comment.
+   step 2, any flags from step 3, and links to the Action run, its
+   `css-only-policy-pr-<pr>` artifact (raw evidence + verdict) and PR comment.
 
 ## If the Action fails to approve
 
